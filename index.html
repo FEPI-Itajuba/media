@@ -161,6 +161,51 @@
             font-size: 0.95rem;
         }
 
+        .formula-box {
+            margin-top: 1rem;
+            padding: 1rem;
+            background-color: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 8px;
+            color: var(--text-dark);
+        }
+
+        .formula-box h3 {
+            margin-bottom: 0.5rem;
+            color: var(--dark-blue);
+        }
+
+        .formula-box code {
+            display: block;
+            margin: 0.5rem 0;
+            padding: 0.6rem;
+            background-color: #ffffff;
+            border-radius: 6px;
+            color: var(--dark-blue);
+            font-size: 0.95rem;
+            white-space: normal;
+        }
+
+        .formula-box p {
+            margin-bottom: 0.5rem;
+        }
+
+        .formula-box p:last-child {
+            margin-bottom: 0;
+        }
+
+        .calculation-line {
+            margin-top: 0.5rem;
+            padding-top: 0.5rem;
+            border-top: 1px dashed #93c5fd;
+        }
+
+        .rounding-note {
+            margin-top: 0.5rem;
+            font-size: 0.95rem;
+            color: var(--text-muted);
+        }
+
         /* Results */
         .result {
             margin-top: 1rem;
@@ -277,8 +322,19 @@
                 </div>
 
                 <div class="input-group">
-                    <label for="rec">Recuperação:</label>
-                    <input type="number" step="0.01" max="100" id="rec" placeholder="Nota de 0 a 100">
+                    <label for="rec">Exame Final (Recuperação):</label>
+                    <input type="number" step="0.01" max="100" id="rec" placeholder="Digite a nota do exame final">
+                </div>
+
+                <div class="formula-box" aria-live="polite">
+                    <h3><i class="fa-solid fa-square-root-variable"></i> Fórmulas</h3>
+                    <p><strong>Média Semestral</strong></p>
+                    <code>Média Semestral = ((Nota 1º Bimestre × 2) + (Nota 2º Bimestre × 3)) ÷ 5</code>
+                    <div id="formula-semestral" class="calculation-line">Digite as notas dos bimestres para acompanhar o cálculo.</div>
+
+                    <p style="margin-top: 1rem;"><strong>Média Final com Exame Final</strong></p>
+                    <code>Média Final = ((Média Semestral × 2) + (Nota Exame Final × 3)) ÷ 5</code>
+                    <div id="formula-final" class="calculation-line">Caso fique de recuperação, digite a nota do exame final para acompanhar o cálculo.</div>
                 </div>
                 
                 <div id="resultado" class="result">Preencha as notas para ver o resultado.</div>
@@ -298,107 +354,163 @@
     });
 
     function limitar(valor, max = 100) {
+        if (Number.isNaN(valor)) return null;
         if (valor > max) return max;
         if (valor < 0) return 0;
         return valor;
     }
 
+    function lerNota(id, max = 100) {
+        const campo = document.getElementById(id);
+        if (campo.value === '') return null;
+
+        const valorLimitado = limitar(parseFloat(campo.value), max);
+        if (valorLimitado !== null && parseFloat(campo.value) !== valorLimitado) {
+            campo.value = valorLimitado;
+        }
+
+        return valorLimitado;
+    }
+
+    function formatar(valor, casas = 2) {
+        return valor.toLocaleString('pt-BR', {
+            minimumFractionDigits: casas,
+            maximumFractionDigits: casas
+        });
+    }
+
+    function arredondarMedia(valor) {
+        const inteiro = Math.floor(valor);
+        const decimal = valor - inteiro;
+        const arredondado = decimal >= 0.5 ? inteiro + 1 : inteiro;
+
+        return {
+            original: valor,
+            inteiro,
+            decimal,
+            arredondado,
+            usado: valor !== arredondado
+        };
+    }
+
+    function textoArredondamento(rotulo, info) {
+        if (!info.usado) return '';
+
+        const comparacao = info.decimal >= 0.5 ? 'maior ou igual a 0,5' : 'menor que 0,5';
+        const acao = info.decimal >= 0.5
+            ? `soma 1 ao inteiro ${info.inteiro}`
+            : `mantém o inteiro ${info.inteiro}`;
+
+        return `<p class="rounding-note"><strong>Arredondamento da ${rotulo}:</strong> ${formatar(info.original)} tem parte decimal ${formatar(info.decimal)} (${comparacao}); portanto ${acao}. Média considerada: <strong>${info.arredondado}</strong>.</p>`;
+    }
+
+    function atualizarFormulaSemestral(b1, b2, mediaInfo = null) {
+        const alvo = document.getElementById('formula-semestral');
+
+        if (b1 === null || b2 === null) {
+            alvo.innerHTML = 'Digite as notas dos bimestres para acompanhar o cálculo.';
+            return;
+        }
+
+        const info = mediaInfo || arredondarMedia(((b1 * 2) + (b2 * 3)) / 5);
+        alvo.innerHTML = `((<strong>${formatar(b1)}</strong> × 2) + (<strong>${formatar(b2)}</strong> × 3)) ÷ 5 = <strong>${formatar(info.original)}</strong>${textoArredondamento('Média Semestral', info)}`;
+    }
+
+    function atualizarFormulaFinal(mediaSemestralArredondada, rec, mediaFinalInfo = null) {
+        const alvo = document.getElementById('formula-final');
+
+        if (mediaSemestralArredondada === null || rec === null) {
+            alvo.innerHTML = 'Caso fique de recuperação, digite a nota do exame final para acompanhar o cálculo.';
+            return;
+        }
+
+        alvo.innerHTML = `((<strong>${mediaSemestralArredondada}</strong> × 2) + (<strong>${formatar(rec)}</strong> × 3)) ÷ 5 = <strong>${formatar(mediaFinalInfo.original)}</strong>${textoArredondamento('Média Final', mediaFinalInfo)}`;
+    }
+
     function somarBimestre(bim) {
-        const coord = limitar(parseFloat(document.getElementById(`${bim}_coord`).value) || 0, 5);
-        const ativ = limitar(parseFloat(document.getElementById(`${bim}_ativ`).value) || 0, 35);
-        const prova = limitar(parseFloat(document.getElementById(`${bim}_prova`).value) || 0, 60);
-
-        // Update the restricted inputs so user sees the max capped values if they typed over
-        if (document.getElementById(`${bim}_coord`).value !== '') document.getElementById(`${bim}_coord`).value = coord;
-        if (document.getElementById(`${bim}_ativ`).value !== '') document.getElementById(`${bim}_ativ`).value = ativ;
-        if (document.getElementById(`${bim}_prova`).value !== '') document.getElementById(`${bim}_prova`).value = prova;
-
-        const total = (coord + ativ + prova).toFixed(2);
-        
+        const coord = lerNota(`${bim}_coord`, 5) || 0;
+        const ativ = lerNota(`${bim}_ativ`, 35) || 0;
+        const prova = lerNota(`${bim}_prova`, 60) || 0;
+        const total = coord + ativ + prova;
         const mainInput = document.getElementById(bim);
-        mainInput.value = parseFloat(total) > 0 ? parseFloat(total) : '';
-        
-        // Disparar o cálculo geral manualmente pois mudamos via JS
+        mainInput.value = total > 0 ? formatar(total).replace(',', '.') : '';
         calcular();
     }
 
     function calcular() {
-        let b1 = limitar(parseFloat(document.getElementById('b1').value) || 0, 100);
-        let b2 = limitar(parseFloat(document.getElementById('b2').value) || 0, 100);
-        let rec = limitar(parseFloat(document.getElementById('rec').value) || 0, 100);
+        const b1 = lerNota('b1');
+        const b2 = lerNota('b2');
+        const rec = lerNota('rec');
 
-        document.getElementById('b1').value = b1 || '';
-        document.getElementById('b2').value = b2 || '';
-        document.getElementById('rec').value = rec || '';
+        let resultado = '';
+        let classe = '';
+        let msg = '';
+        let mediaSemestralInfo = null;
+        let mediaFinalInfo = null;
+        let mediaSemestralConsiderada = null;
 
-        let resultado = "";
-        let classe = "";
+        atualizarFormulaSemestral(b1, b2);
+        atualizarFormulaFinal(null, rec);
 
-        let necessario_b2 = null;
-        let media_semestral = null;
-        let necessario_rec = null;
-        let media_final = null;
-        let msg = "";
-
-        // Se só tem B1 preenchido, calcula quanto precisa no B2
-        if (b1 > 0 && b2 === 0 && rec === 0) {
-            // Formula original: media = ((b1 * 2) + (b2 * 3)) / 5
-            // Queremos media = 70. Entao: 70 * 5 = (b1 * 2) + (b2 * 3)
-            // b2 = ((70 * 5) - (b1 * 2)) / 3
-            necessario_b2 = ((70 * 5) - (b1 * 2)) / 3;
-            resultado += `<p>Precisa no 2º Bimestre: <strong>${necessario_b2.toFixed(2)}</strong></p>`;
-            classe = "recuperacao";
+        if (b1 !== null && b2 === null && rec === null) {
+            const necessarioB2 = ((70 * 5) - (b1 * 2)) / 3;
+            resultado += `<p>Precisa no 2º Bimestre para média semestral 70: <strong>${formatar(Math.max(0, necessarioB2))}</strong></p>`;
+            classe = 'recuperacao';
         }
 
-        // Se tem B1 e B2 preenchidos
-        if (b1 > 0 && b2 > 0) {
-            media_semestral = ((b1 * 2) + (b2 * 3)) / 5;
-            resultado += `<p>Média Semestral: <strong>${media_semestral.toFixed(2)}</strong></p>`;
+        if (b1 !== null && b2 !== null) {
+            const mediaSemestral = ((b1 * 2) + (b2 * 3)) / 5;
+            mediaSemestralInfo = arredondarMedia(mediaSemestral);
+            mediaSemestralConsiderada = mediaSemestralInfo.arredondado;
+            atualizarFormulaSemestral(b1, b2, mediaSemestralInfo);
 
-            if (media_semestral >= 70) {
-                msg = "Aprovado direto!";
-                classe = "aprovado";
+            resultado += `<p>Média Semestral calculada: <strong>${formatar(mediaSemestral)}</strong></p>`;
+            resultado += `<p>Média Semestral considerada: <strong>${mediaSemestralConsiderada}</strong></p>`;
+            resultado += textoArredondamento('Média Semestral', mediaSemestralInfo);
+
+            if (mediaSemestralConsiderada >= 70) {
+                msg = 'Aprovado direto!';
+                classe = 'aprovado';
             } else {
-                msg = "Em Recuperação";
-                classe = "recuperacao";
-                // Formula recuperacao original: ((50 * 5) - (media_semestral * 2)) / 3
-                necessario_rec = ((50 * 5) - (media_semestral * 2)) / 3;
-                if (necessario_rec < 0) necessario_rec = 0;
-                if (necessario_rec > 100) {
-                     resultado += `<p>Precisa na Recuperação: <strong>Impossível atingir matematicamente</strong></p>`;
+                msg = 'Em Recuperação';
+                classe = 'recuperacao';
+                const necessarioRec = ((50 * 5) - (mediaSemestralConsiderada * 2)) / 3;
+                if (necessarioRec > 100) {
+                    resultado += '<p>Precisa no Exame Final: <strong>Impossível atingir matematicamente</strong></p>';
                 } else {
-                     resultado += `<p>Precisa na Recuperação: <strong>${necessario_rec.toFixed(2)}</strong></p>`;
+                    resultado += `<p>Precisa no Exame Final para média final 50: <strong>${formatar(Math.max(0, necessarioRec))}</strong></p>`;
                 }
             }
         }
 
-        // Se tem Recuperacao
-        if (media_semestral !== null && rec > 0) {
-            media_final = ((media_semestral * 2) + (rec * 3)) / 5;
-            
-            // Re-escrever o resultado para focar no final
-            resultado = `<p>Média Semestral: <strong>${media_semestral.toFixed(2)}</strong></p>`;
-            resultado += `<p>Média Final: <strong>${media_final.toFixed(2)}</strong></p>`;
+        if (mediaSemestralConsiderada !== null && rec !== null) {
+            const mediaFinal = ((mediaSemestralConsiderada * 2) + (rec * 3)) / 5;
+            mediaFinalInfo = arredondarMedia(mediaFinal);
+            atualizarFormulaFinal(mediaSemestralConsiderada, rec, mediaFinalInfo);
 
-            if (media_final >= 50) {
-                msg = "Aprovado após Recuperação!";
-                classe = "aprovado";
+            resultado = `<p>Média Semestral considerada: <strong>${mediaSemestralConsiderada}</strong></p>`;
+            resultado += `<p>Média Final calculada: <strong>${formatar(mediaFinal)}</strong></p>`;
+            resultado += `<p>Média Final considerada: <strong>${mediaFinalInfo.arredondado}</strong></p>`;
+            resultado += textoArredondamento('Média Final', mediaFinalInfo);
+
+            if (mediaFinalInfo.arredondado >= 50) {
+                msg = 'Aprovado após Recuperação!';
+                classe = 'aprovado';
             } else {
-                msg = "Reprovado";
-                classe = "reprovado";
+                msg = 'Reprovado';
+                classe = 'reprovado';
             }
         }
 
         if (msg) resultado += `<p><strong><i class="fa-solid fa-circle-info"></i> ${msg}</strong></p>`;
 
         const box = document.getElementById('resultado');
-        
-        if (b1 === 0 && b2 === 0 && rec === 0) {
+        if (b1 === null && b2 === null && rec === null) {
             box.style.display = 'none';
         } else {
             box.style.display = 'block';
             box.className = 'result ' + classe;
-            box.innerHTML = resultado;
+            box.innerHTML = resultado || '<p>Preencha as notas para ver o resultado.</p>';
         }
     }
     </script>
